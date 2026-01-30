@@ -1,3 +1,5 @@
+alert("INDEX JS LOADED");
+
 const socket = io();
 
 
