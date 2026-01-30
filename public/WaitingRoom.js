@@ -1,4 +1,4 @@
-const socket = io("http://localhost:3000");
+const socket = io();
 
 const roomData = JSON.parse(sessionStorage.getItem("roomData"));
 const urlParams = new URLSearchParams(window.location.search);

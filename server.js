@@ -7,6 +7,9 @@ const path = require("path");
 const app = express();
 const server = http.createServer(app);
 
+
+const PORT = process.env.PORT || 3000;
+
 // Set EJS as the template engine
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "view"));
@@ -855,6 +858,7 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3000, () => {
-  console.log("Server running on port 3000");
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
+

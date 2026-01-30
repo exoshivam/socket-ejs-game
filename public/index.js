@@ -1,5 +1,5 @@
+const socket = io();
 
-const socket = io("http://localhost:3000");
 
         let selectedCharacter = null;
         let selectedGameType = 'classic';
