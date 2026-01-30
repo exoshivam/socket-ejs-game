@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lakadia - Game Table</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%);
+            min-height: 100vh;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .game-table {
+            background: radial-gradient(ellipse at center, #2d5a3d 0%, #1a472a 100%);
+            border: 8px solid #8b6914;
+            box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(139, 105, 20, 0.3);
+        }
+        
+        .card {
+            display: inline-block;
+            width: 60px;
+            height: 85px;
+            border-radius: 8px;
+            position: relative;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            flex-shrink: 0;
+        }
+        
+        .card.playable-card:hover {
+            transform: translateY(-15px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+        }
+        
+        .card.selected {
+            transform: translateY(-25px);
+            box-shadow: 0 12px 24px rgba(102, 126, 234, 0.6);
+        }
+        
+        .player-area {
+            position: fixed;
+            white-space: nowrap;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .player-info {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #ffd700;
+            border-radius: 12px;
+            padding: 8px 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            font-size: 12px;
+            position:fixed;
+            white-space: normal;
+        }
+        
+        .player-info.active {
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            animation: glow 1.5s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { box-shadow: 0 4px 12px rgba(255, 215, 0, 0.5); }
+            to { box-shadow: 0 4px 20px rgba(255, 215, 0, 0.9); }
+        }
+        
+        .center-pile {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .action-button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            transition: all 0.3s ease;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .action-button:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(245, 87, 108, 0.5);
+        }
+        
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 50px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+            text-align: center;
+            max-width: 700px;
+            width: 95%;
+        }
+
+        .bid-buttons-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 15px;
+            margin: 30px 0;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .bid-btn {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto;
+            cursor: pointer;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            background: white;
+            color: #667eea;
+            font-weight: bold;
+            font-size: 20px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .bid-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: scale(1.2);
+            cursor: pointer;
+        }
+        
+        .bid-btn:active {
+            transform: scale(0.9);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .status-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
+            margin: 20px 0;
+        }
+
+        .reaction-container {
+            position: absolute;
+            bottom: 220px;
+            left: 50%;
+            transform: translateX(80px);
+            display: flex;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .reaction-icon-btn {
+            transform: translateX(75px) translateY(-5px);
+            width: 44px;
+            height: 44px;
+            background: white;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .reaction-icon-btn:hover {
+            background: #f0f0f0;
+            transform: scale(1.05) translateX(75px) translateY(-5px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .reaction-menu {
+            position: absolute;
+            bottom: 0;
+            left: 75px;
+            background: white;
+            border-radius: 50px;
+            padding: 8px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            display: none;
+            gap: 6px;
+            opacity: 0;
+            transform: scale(0.8);
+            transform-origin: left center;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+        }
+
+        .reaction-menu.active {
+            display: flex;
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+
+        .reaction-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: #f0f0f0;
+            border-radius: 50%;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .reaction-btn:hover {
+            background: #e0e0e0;
+            transform: scale(1.15);
+        }
+
+        .floating-reaction {
+            position: fixed;
+            font-size: 32px;
+            pointer-events: none;
+            animation: float-up 2.5s ease-out forwards;
+        }
+
+        @keyframes float-up {
+            0% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-100px);
+            }
+        }
+
+        .chat-icon {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+        }
+
+        .chat-icon:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+        }
+
+        .chat-window {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            width: 300px;
+            height: 400px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            z-index: 999;
+            overflow: hidden;
+        }
+
+        .chat-window.hidden {
+            display: none;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .chat-close-btn:hover {
+            transform: scale(1.2);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background: #f9f9f9;
+        }
+
+        .chat-message {
+            margin-bottom: 12px;
+            padding: 8px;
+            border-radius: 8px;
+            word-wrap: break-word;
+        }
+
+        .chat-message.own {
+            background: #667eea;
+            color: white;
+            margin-left: 20px;
+            text-align: right;
+        }
+
+        .chat-message.other {
+            background: #e0e0e0;
+            color: #333;
+            margin-right: 20px;
+        }
+
+        .chat-message-player {
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 3px;
+            opacity: 0.7;
+        }
+
+        .chat-input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #e0e0e0;
+            gap: 5px;
+        }
+
+        .chat-input {
+            flex: 1;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 13px;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 6px rgba(102, 126, 234, 0.3);
+        }
+
+        .chat-send-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .chat-send-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .chat-send-btn:active {
+            transform: scale(0.95);
+        }
+
+        .chat-badge {
+            position: absolute;
+            top: -0px;
+            right: -0px;
+            width: 12px;
+            height: 12px;
+            background: #ff4444;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .chat-badge.show {
+            display: flex;
+        }
+
+        .turn-status-display {
+            position: absolute;
+            top: 60%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 500;
+            font-size: 18px;
+            font-weight: 700;
+            min-width: 200px;
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        .turn-status-display.your-turn {
+            color: #ffffff;
+        }
+
+        .turn-status-display.other-turn {
+            color: #ff0000;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.8;
+            }
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 640px) {
+            .card {
+                width: 45px;
+                height: 65px;
+            }
+            .modal-content {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="h-screen w-screen p-2 sm:p-4 flex items-center justify-center">
+        <div class="game-table w-full h-full rounded-2xl relative">
+            
+            <!-- Top Player (Opponent 2) -->
+            <div class="player-area top-10 left-1/2 transform -translate-x-1/2">
+                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; transform: rotate(180deg);" id="cards-display-top">
+                </div>
+                <div class="player-info text-center mb-2" id="player-top" style="transform: translateY(190px);">
+                    <div class="font-bold text-sm"><%= players[2].name %></div>
+                    <div class="text-xs text-gray-600"><span id="cards-top">13</span> cards</div>
+                    <div class="text-xs font-semibold text-purple-600">Bid: <span id="bid-top">-</span> | Won: <span id="won-top">0</span></div>
+                    <div class="text-xs font-semibold text-green-600">Score: <span id="score-top">0</span></div>
+                </div>
+            </div>
+            
+            <!-- Left Player (Opponent 1) -->
+            <div class="player-area left-2 top-1/2 transform -translate-y-1/2" style="flex-direction: column; gap: 10px; align-items: flex-end;">
+                <div class="player-info mb-2" id="player-left" style="display: flex; flex-direction: column; align-items: center; transform: translateX(-260px) translateY(40px);">
+                    <div class="font-bold text-sm"><%= players[1].name %></div>
+                    <div class="text-xs text-gray-600"><span id="cards-left">13</span> cards</div>
+                    <div class="text-xs font-semibold text-purple-600">Bid: <span id="bid-left">-</span> | Won: <span id="won-left">0</span></div>
+                    <div class="text-xs font-semibold text-green-600">Score: <span id="score-left">0</span></div>
+                </div>
+                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;max-width: 600px; transform: rotate(90deg) translateY(180px);" id="cards-display-left">
+                </div>
+            </div>
+            
+            <!-- Right Player (Opponent 3) -->
+            <div class="player-area right-2 top-1/2 transform -translate-y-1/2" style="flex-direction: column; gap: 10px; align-items: flex-start;">
+                <div class="player-info mb-2" id="player-right" style="display: flex; flex-direction: column; align-items: center; transform: translateX(260px) translateY(40px);">
+                    <div class="font-bold text-sm"><%= players[3].name %></div>
+                    <div class="text-xs text-gray-600"><span id="cards-right">13</span> cards</div>
+                    <div class="text-xs font-semibold text-purple-600">Bid: <span id="bid-right">-</span> | Won: <span id="won-right">0</span></div>
+                    <div class="text-xs font-semibold text-green-600">Score: <span id="score-right">0</span></div>
+                </div>
+                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; max-width: 600px; transform: rotate(-90deg) translateY(180px);" id="cards-display-right">
+                </div>
+            </div>
+            
+            <!-- Center Pile -->
+            <div class="center-pile">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <div style="color: white; font-size: 14px; font-weight: 600; margin-bottom: 10px;"></div>
+                    <div style="display: flex; gap: 15px; justify-content: center;" id="trick-cards">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Turn Status Display (Center Screen) -->
+            <div class="turn-status-display" id="turn-status-display" style="display: none;">
+                <div>🎴 Your Turn!</div>
+            </div>
+
+            <!-- Bidding Waiting Display (Center Screen) -->
+            <div class="turn-status-display" id="bidding-waiting-display" style="display: none; background: linear-gradient(135deg, #b18fffad 0%, #6c28d9b9 100%); color: white;">
+                <div>⏳ Waiting for other players to submit their bids...</div>
+            </div>
+            
+            <!-- Your Cards (Bottom) -->
+            <div class="player-area bottom-10 left-1/2 transform -translate-x-1/2">
+                <div style="display:flex; gap:6px; align-items:center; background: white; padding: 8px 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); position: fixed; bottom: 200px; left: 150px; transform: translateX(-50%);" id="bid-entry" class="hidden">
+                        <input id="bid-input" type="number" min="1" max="13" placeholder="Bid 1-13" style="width:80px;padding:6px;border-radius:6px;border:1px solid #ddd;font-size:13px;" />
+                        <button id="bid-submit-btn" onclick="gameState.submitBidFromInput()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; padding: 8px 10px; border-radius: 8px; color: white; font-weight: bold; cursor: pointer;">Bid</button>
+                    </div style="display: flex; gap: 5px; justify-content: center;flex-direction: column;">
+                <div class="player-info mb-3 text-center" id="player-you" style="position: fixed; bottom: 175px; left: 250px; display: flex; flex-direction: column; align-items: center; width: 250px;">
+                    <div class="font-bold text-sm"><%= players[0].name %></div>
+                    <div class="text-xs text-gray-600" id="player-status">Awaiting Bid...</div>
+                    <div class="text-xs font-semibold text-purple-600">Bid: <span id="bid-you">-</span> | Won: <span id="won-you">0</span></div>
+                    <div class="text-xs font-semibold text-green-600">Score: <span id="score-you">0</span></div>
+                </div>
+                
+                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; width: 750px;" id="cards-display-you">
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div style="position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; z-index: 100; flex-wrap: wrap; justify-content: center;">
+                <button class="action-button" onclick="gameState.playCard()" id="play-btn" style="display: none;">
+                    🎴 Play Card
+                </button>
+                <!-- <button style="background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%); border: none; padding: 12px 25px; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; display: none;" onclick="gameState.focusBidInput()" id="open-bid-btn">
+                    📋 Place Your Bid
+                </button> -->
+                <button style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; padding: 12px 25px; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; display: none;" onclick="gameState.submitBid()" id="bid-btn">
+                    ✓ Submit Bid
+                </button>
+            </div>
+            
+            <!-- Bid Info Display (during playing phase) -->
+            <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 50;" id="bid-info">
+            </div>
+            
+            <!-- Game Info - Top Right -->
+            <div style="position: absolute; top: 20px; right: 20px; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); text-align: center;">
+                <div style="font-size: 12px; color: #999; margin-bottom: 5px;">Round</div>
+                <div style="font-size: 24px; font-weight: bold; color: #667eea;" id="round-display">1</div>
+            </div>
+            
+            <!-- Menu Button - Top Left -->
+            <button style="position: absolute; top: 20px; left: 20px; background: white; padding: 12px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); border: none; cursor: pointer; font-size: 18px;" onclick="gameState.openMenu()">
+                ☰
+            </button>
+            
+            <!-- Reaction Menu Container -->
+            <div class="reaction-container">
+                <button class="reaction-icon-btn" id="reaction-btn-main" title="Send Reaction" onclick="gameState.toggleReactionMenu()">😊</button>
+                <div class="reaction-menu" id="reaction-menu">
+                    <button class="reaction-btn" onclick="gameState.sendReaction('😊')" title="Smile">😊</button>
+                    <button class="reaction-btn" onclick="gameState.sendReaction('😂')" title="Laugh">😂</button>
+                    <button class="reaction-btn" onclick="gameState.sendReaction('😢')" title="Cry">😢</button>
+                    <button class="reaction-btn" onclick="gameState.sendReaction('😱')" title="Shocked">😱</button>
+                    <button class="reaction-btn" onclick="gameState.sendReaction('👍')" title="Good">👍</button>
+                    <button class="reaction-btn" onclick="gameState.sendReaction('🎉')" title="Celebrate">🎉</button>
+                </div>
+            </div>
+
+            <!-- Chat Icon -->
+            <button class="chat-icon" onclick="gameState.toggleChat()" title="Chat">💬
+                <div class="chat-badge" id="chat-badge"></div>
+            </button>
+
+            <!-- Chat Window -->
+            <div class="chat-window hidden" id="chat-window">
+                <div class="chat-header">
+                    <span>Game Chat</span>
+                    <button class="chat-close-btn" onclick="gameState.toggleChat()">✕</button>
+                </div>
+                <div class="chat-messages" id="chat-messages"></div>
+                <div class="chat-input-area">
+                    <input type="text" class="chat-input" id="chat-input" placeholder="Type message..." />
+                    <button class="chat-send-btn" onclick="console.log('[BUTTON CLICK] Chat send button clicked'); gameState.sendChatMessage()">📤</button>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Setup Modal -->
+    <div class="modal-overlay" id="setup-modal">
+        <div class="modal-content" id="setup-content">
+            <h1 style="font-size: 32px; margin-bottom: 10px;">🎴 Lakadia Card Game</h1>
+            <p style="font-size: 16px; color: #666; margin: 10px 0;">Round <span id="round-num">1</span> of 5</p>
+            <p style="font-size: 14px; color: #666; margin-bottom: 30px;">4 Players • 52 Cards • Trump: Spades ♠</p>
+            <div class="status-text" id="setup-status">Ready to deal cards?</div>
+            <button style="background: linear-gradient(135deg, #a855f7 0%, #d946ef 100%); border: none; padding: 15px 40px; border-radius: 10px; color: white; font-weight: bold; font-size: 16px; cursor: pointer; transition: all 0.3s; " onclick="gameState.setupGame()">
+                🔀 Shuffle & Deal Cards
+            </button>
+        </div>
+    </div>
+
+    <!-- Ready to Bid Modal -->
+    <div class="modal-overlay hidden" id="ready-to-bid-modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2 style="font-size: 28px; margin-bottom: 30px; color: #1a472a;">🎯 Ready to Bid?</h2>
+            <div style="display: flex; gap: 15px; justify-content: center;">
+                <button id="bid-confirm-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; padding: 15px 40px; border-radius: 10px; color: white; font-weight: bold; font-size: 16px; cursor: pointer; transition: all 0.3s;">
+                    ✓ Yes, Ready
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // Set up global variables from EJS before loading game-room.js
+        window.GAME_INIT = {
+            isHost: <%= currentPlayerIsHost %>,
+            players: <%- JSON.stringify(players) %>,
+            roomId: new URLSearchParams(window.location.search).get('roomId'),
+            playerName: new URLSearchParams(window.location.search).get('playerName')
+        };
+
+        // Initialize Socket.io connection
+        window.socket = io();
+        
+        console.log('Socket.io initialized');
+        
+        // Debug: Log ALL events being emitted
+        const originalEmit = window.socket.emit;
+        window.socket.emit = function(...args) {
+            console.log('[SOCKET DEBUG] Emitting:', args[0], args[1]);
+            return originalEmit.apply(this, args);
+        };
+        
+        // Emit joinGameRoom event so socket joins the room and receives broadcasts
+        window.socket.on('connect', () => {
+            console.log('[SOCKET] Connected:', window.socket.id);
+            window.socket.emit('joinGameRoom', {
+                roomId: window.GAME_INIT.roomId,
+                playerName: window.GAME_INIT.playerName
+            });
+            
+            // Set up chat listener after connect
+            window.socket.on('receiveChatMessage', (data) => {
+                console.log('[CHAT] Received message:', data);
+                if (window.gameState && window.gameState.addChatMessage) {
+                    window.gameState.addChatMessage(data.playerName, data.message, false);
+                }
+            });
+        });
+        
+        // Listen for own cards dealt by server
+        window.socket.on('cardsDealtToMe', (data) => {
+            console.log('Received my cards from server:', data.hand.length, 'cards');
+            if (window.gameState) {
+                let currentPlayerPos;
+                
+                // For round 1: serverPlayerIndex is not set yet, so find it
+                if (window.gameState.serverPlayerIndex === undefined) {
+                    // In round 1, players array is in server order, so find position normally
+                    currentPlayerPos = window.gameState.players.findIndex(p => p.name === window.GAME_INIT.playerName);
+                    console.log('Round 1: Current player position in server order:', currentPlayerPos);
+                    
+                    // Store the server index for all future rounds
+                    window.gameState.serverPlayerIndex = currentPlayerPos;
+                    
+                    // Sort cards by suit and rank before storing
+                    const sortedHand = window.gameState.sortCardsBySuitAndRank(data.hand);
+                    
+                    // Rotate BOTH players array and hands array so current player is always at index 0
+                    const rotatedPlayers = [];
+                    const rotatedHands = [];
+                    
+                    for (let i = 0; i < 4; i++) {
+                        rotatedPlayers[i] = window.gameState.players[(currentPlayerPos + i) % 4];
+                        rotatedHands[i] = i === 0 ? sortedHand : new Array(13).fill(null);
+                    }
+                    
+                    // Update both arrays
+                    window.gameState.players = rotatedPlayers;
+                    window.gameState.playersHands = rotatedHands;
+                    
+                    console.log('Rotated players:', rotatedPlayers.map(p => p.name));
+                    console.log('Rotated hands - player 0:', rotatedHands[0].length, 'cards, others: card backs');
+                } else {
+                    // For round 2+: Players array is already rotated, just update hands
+                    const sortedHand = window.gameState.sortCardsBySuitAndRank(data.hand);
+                    console.log('Round 2+: Updating hands for current player, serverPlayerIndex:', window.gameState.serverPlayerIndex);
+                    
+                    // Current player is always at index 0 in the rotated array
+                    window.gameState.playersHands[0] = sortedHand;
+                    
+                    // Reset other players' hands to card backs
+                    for (let i = 1; i < 4; i++) {
+                        window.gameState.playersHands[i] = new Array(13).fill(null);
+                    }
+                }
+                
+                // Update player names in the UI
+                if (window.gameState.updatePlayerNames) {
+                    window.gameState.updatePlayerNames();
+                }
+            }
+        });
+        
+        // Listen for dealing complete event
+        window.socket.on('dealingComplete', (data) => {
+            console.log('✓ [EVENT] dealingComplete received - All players have received their cards');
+            console.log('Current game state:', window.gameState);
+            
+            if (window.gameState) {
+                // Reset endRound processing lock so next rounds can proceed
+                window.gameState.endRoundLock = false;
+                console.log('dealingComplete: endRoundLock reset');
+                // Show the Ready to Bid modal
+                const modal = document.getElementById('ready-to-bid-modal');
+                const confirmBtn = document.getElementById('bid-confirm-btn');
+                
+                if (modal && confirmBtn) {
+                    modal.classList.remove('hidden');
+                    
+                    // Remove any existing click handlers
+                    confirmBtn.onclick = null;
+                    
+                    // Add click handler for confirmation
+                    confirmBtn.onclick = function() {
+                        console.log('Player confirmed ready to bid');
+                        modal.classList.add('hidden');
+                        window.gameState.proceedToBidding();
+                    };
+                    
+                    console.log('✓ Ready to Bid modal displayed');
+                }
+            }
+        });
+        
+        // REMOVE OLD cardsDealt listener - replaced by cardsDealtToMe and dealingComplete
+        // These old listeners don't exist anymore
+        
+        // Listen for reactions from other players
+        window.socket.on('receiveReaction', (data) => {
+            if (window.gameState) {
+                // Find which player sent the reaction
+                const playerIndex = window.gameState.players.findIndex(p => p.name === data.playerName);
+                if (playerIndex !== -1 && playerIndex !== 0) {
+                    // Determine which card display to show the reaction above
+                    let cardDisplayId;
+                    if (playerIndex === 1) {
+                        cardDisplayId = 'cards-display-left';
+                    } else if (playerIndex === 2) {
+                        cardDisplayId = 'cards-display-top';
+                    } else if (playerIndex === 3) {
+                        cardDisplayId = 'cards-display-right';
+                    }
+                    
+                    if (cardDisplayId) {
+                        const cardDisplay = document.getElementById(cardDisplayId);
+                        if (cardDisplay && window.gameState.showFloatingReaction) {
+                            window.gameState.showFloatingReaction(data.emoji, cardDisplay);
+                        }
+                    }
+                }
+            }
+        });
+
+        // Listen for bid submission updates
+        window.socket.on('bidSubmittedUpdate', (data) => {
+            console.log(`[BID UPDATE] ${data.playerName} bid submitted. ${data.bidsReceivedCount}/${data.totalPlayersNeeded} bids received`);
+            if (window.gameState && window.gameState.gamePhase === 'bidding') {
+                const statusEl = document.getElementById('player-status');
+                if (statusEl) {
+                    statusEl.textContent = `⏳ Bids received: ${data.bidsReceivedCount}/${data.totalPlayersNeeded}`;
+                    statusEl.style.color = '#f59e0b';
+                }
+            }
+        });
+
+        // Listen for when all players have submitted their bids
+        window.socket.on('allBidsSubmitted', (data) => {
+            console.log('[BIDS] All bids received:', data);
+            if (window.gameState) {
+                // Bids come from server indexed by server player order (0-3)
+                // Store them in a server-indexed array directly
+                window.gameState.bids = [...data.bidsArray];
+                
+                console.log('Game state bids updated (server indices):', window.gameState.bids);
+                console.log('Server player index for this client:', window.gameState.serverPlayerIndex);
+
+                // Update bid displays in UI
+                if (window.gameState.updateBidDisplays) {
+                    window.gameState.updateBidDisplays();
+                }
+                
+                console.log('✓ All bids locked. Starting playing phase...');
+                
+                // Start playing phase
+                window.gameState.startPlayingPhase();
+            }
+
+            // CARD PLAYING EVENTS
+        window.socket.on('cardPlayed', (data) => {
+            if (window.gameState) {
+                // Convert server player index to client index
+                const clientPlayerIndex = (data.playerIndex - window.gameState.serverPlayerIndex + 4) % 4;
+                
+                // Check if this card is already in the trick to prevent duplicates
+                const alreadyAdded = window.gameState.currentTrickCards.some(tc => 
+                    tc.playerIndex === clientPlayerIndex && 
+                    tc.card.suit === data.card.suit && 
+                    tc.card.rank === data.card.rank
+                );
+                
+                if (!alreadyAdded) {
+                    window.gameState.currentTrickCards.push({playerIndex: clientPlayerIndex, playerName: data.playerName, card: data.card});
+                }
+                
+                // Update card count for the player who played
+                // Only remove from hand for other players (player 0's hand is already updated in submitCardPlay)
+                if (clientPlayerIndex !== 0 && window.gameState.playersHands[clientPlayerIndex] && window.gameState.playersHands[clientPlayerIndex].length > 0) {
+                    // Remove the actual card that was played, not just pop from the end
+                    const cardIndex = window.gameState.playersHands[clientPlayerIndex].findIndex(c => 
+                        c.suit === data.card.suit && c.rank === data.card.rank
+                    );
+                    if (cardIndex !== -1) {
+                        window.gameState.playersHands[clientPlayerIndex].splice(cardIndex, 1);
+                    } else {
+                        // If exact card not found, just remove the last card (fallback for hidden cards)
+                        window.gameState.playersHands[clientPlayerIndex].pop();
+                    }
+                }
+                
+                // Store the server index of who just played
+                window.gameState.serverCurrentPlayerIndex = data.playerIndex;
+                
+                // Re-render to update trick display and card counts
+                window.gameState.renderAllCards();
+                
+                const centerPile = document.getElementById('center-pile');
+                if (centerPile) {
+                    const cardEl = document.createElement('div');
+                    cardEl.className = 'card';
+                    cardEl.style.background = 'white';
+                    cardEl.style.display = 'flex';
+                    cardEl.style.alignItems = 'center';
+                    cardEl.style.justifyContent = 'center';
+                    cardEl.style.marginLeft = ((data.tricksPlayed - 1) * 70) + 'px';
+                    const isRed = data.card.suit === '♥' || data.card.suit === '♦';
+                    cardEl.style.color = isRed ? 'red' : 'black';
+                    cardEl.style.fontSize = '14px';
+                    cardEl.style.fontWeight = 'bold';
+                    cardEl.innerHTML = data.card.rank + '<br>' + data.card.suit;
+                    centerPile.appendChild(cardEl);
+                }
+            }
+        });
+
+        window.socket.on('nextPlayer', (data) => {
+            if (window.gameState) {
+                // Server sends absolute player index (0-3) and player name
+                window.gameState.serverCurrentPlayerIndex = data.currentPlayerIndex;
+                window.gameState.currentPlayerName = data.currentPlayerName;
+                const clientIndex = (data.currentPlayerIndex - window.gameState.serverPlayerIndex + 4) % 4;
+                
+                console.log(`[TURN UPDATE] ${data.currentPlayerName}'s turn. Server index: ${data.currentPlayerIndex}, My server index: ${window.gameState.serverPlayerIndex}`);
+                
+                window.gameState.currentPlayerIndex = clientIndex;
+                window.gameState.updatePlayingStatus();
+                // Re-render cards to update click handlers for the new current player
+                window.gameState.renderAllCards();
+            }
+        });
+
+        window.socket.on('nextTrick', (data) => {
+            if (window.gameState) {
+                // UNLOCK CARDS for new trick
+                window.gameState.cardLocked = false;
+                console.log('🔓 Cards unlocked for new trick');
+                
+                // Server sends absolute player index (0-3) and player name
+                window.gameState.serverCurrentPlayerIndex = data.currentPlayerIndex;
+                window.gameState.currentPlayerName = data.currentPlayerName;
+                const clientIndex = (data.currentPlayerIndex - window.gameState.serverPlayerIndex + 4) % 4;
+                
+                window.gameState.currentPlayerIndex = clientIndex;
+                window.gameState.currentTrickCards = [];
+                window.gameState.leadSuit = null;
+                window.gameState.tricksWon = data.tricksWon;
+                const centerPile = document.getElementById('center-pile');
+                if (centerPile) centerPile.innerHTML = '';
+                window.gameState.updatePlayingStatus();
+                // Re-render cards to update click handlers for the new current player
+                window.gameState.renderAllCards();
+            }
+        });
+
+        window.socket.on('trickComplete', (data) => {
+            const statusEl = document.getElementById('player-status');
+            if (statusEl) {
+                statusEl.textContent = '✅ ' + data.winnerName + ' won the trick!';
+                statusEl.style.color = '#10b981';
+            }
+        });
+
+        window.socket.on('roundComplete', (data) => {
+            const statusEl = document.getElementById('player-status');
+            if (statusEl) statusEl.textContent = '🎉 Round Complete!';
+            
+            // Update tricksWon in gameState from server data
+            if (window.gameState) {
+                console.log('✓ [EVENT] roundComplete received:', data);
+                window.gameState.tricksWon = data.tricksWon;
+                console.log('Round complete. Tricks won:', data.tricksWon, 'Bids:', window.gameState.bids);
+                
+                // Call endRound to calculate scores and proceed to next round
+                setTimeout(() => {
+                    console.log('Invoking endRound()');
+                    window.gameState.endRound();
+                }, 1000);
+            }
+        });
+
+        window.socket.on('newRoundStarted', (data) => {
+            if (window.gameState) {
+                console.log('New round started:', data.roundNumber);
+                const statusEl = document.getElementById('player-status');
+                if (statusEl) statusEl.textContent = `📋 Round ${data.roundNumber} - Enter your bid`;
+            }
+        });
+
+        window.socket.on('startPlayingPhase', (data) => {
+            if (window.gameState) {
+                console.log('[PLAYING PHASE] Starting with:', data);
+                // Server sends the first player's index and name
+                window.gameState.serverCurrentPlayerIndex = data.currentPlayerIndex;
+                window.gameState.currentPlayerName = data.currentPlayerName;
+                window.gameState.startPlayingPhase();
+            }
+        });
+        });
+    </script>
+
+    <script src="/game-room.js"></script>
+</body>
+</html>
+
+

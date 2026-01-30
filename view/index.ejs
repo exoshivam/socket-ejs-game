@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lakadia - Card Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Poppins:wght@300;400;500;600&display=swap');
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .game-title {
+            font-family: 'Cinzel', serif;
+            background: linear-gradient(135deg, #ffd700, #ffed4e, #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.5)); }
+            to { filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.8)); }
+        }
+        
+        .card-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .character-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        
+        .character-card:hover {
+            transform: translateY(-10px) scale(1.05);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+        
+        .character-card.selected {
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            border-color: #ffa500;
+            transform: scale(1.05);
+        }
+        
+        .play-button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .play-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(245, 87, 108, 0.5);
+        }
+        
+        .play-button:active {
+            transform: scale(0.98);
+        }
+        
+        .room-button {
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #667eea;
+            transition: all 0.3s ease;
+        }
+        
+        .room-button:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .floating {
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { 
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to { 
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .game-option {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            margin: 10px 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .game-option:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+            transform: translateX(5px);
+        }
+
+        .game-option input[type="radio"] {
+            margin-right: 15px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .game-option .game-info {
+            flex: 1;
+        }
+
+        .game-option .game-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .game-option .game-desc {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .modal-button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+            margin-right: 10px;
+        }
+
+        .modal-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(245, 87, 108, 0.3);
+        }
+
+        .modal-button.secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .modal-button.secondary:hover {
+            background: #d0d0d0;
+        }
+
+        .modal-header {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .custom-game-section {
+            display: none;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .custom-game-section.active {
+            display: block;
+        }
+
+        .custom-game-section input,
+        .custom-game-section textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .custom-game-section input:focus,
+        .custom-game-section textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .custom-game-section label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-top: 10px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+    <div class="card-container rounded-3xl shadow-2xl p-8 w-full max-w-md">
+        <!-- Game Title -->
+        <h1 class="game-title text-6xl font-black text-center mb-8 floating">
+            LAKADIA
+        </h1>
+        
+        <!-- Player Name Input -->
+        <div class="mb-6">
+            <label class="block text-gray-700 font-semibold mb-2 text-sm uppercase tracking-wide">
+                Enter Your Name
+            </label>
+            <input 
+                type="text" 
+                id="playerName"
+                placeholder="Warrior name..."
+                class="w-full px-4 py-3 rounded-xl border-2 border-gray-300 transition-all duration-300 font-medium"
+            />
+        </div>
+        
+        <!-- Character Selection -->
+        <div class="mb-6">
+            <label class="block text-gray-700 font-semibold mb-3 text-sm uppercase tracking-wide">
+                Choose Your Character
+            </label>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="character-card rounded-xl p-4 border-3 border-gray-300 text-center" onclick="selectCharacter(this, 'warrior')">
+                    <div class="text-4xl mb-2">⚔️</div>
+                    <div class="font-semibold text-xs">Warrior</div>
+                </div>
+                <div class="character-card rounded-xl p-4 border-3 border-gray-300 text-center" onclick="selectCharacter(this, 'mage')">
+                    <div class="text-4xl mb-2">🔮</div>
+                    <div class="font-semibold text-xs">Mage</div>
+                </div>
+                <div class="character-card rounded-xl p-4 border-3 border-gray-300 text-center" onclick="selectCharacter(this, 'rogue')">
+                    <div class="text-4xl mb-2">🗡️</div>
+                    <div class="font-semibold text-xs">Rogue</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Play Button -->
+        <button class="play-button w-full py-4 rounded-xl text-white font-bold text-xl mb-6 shadow-lg" onclick="playGame()">
+            ▶ PLAY NOW
+        </button>
+        
+        <!-- Room Options -->
+        <div class="grid grid-cols-2 gap-4">
+            <button class="room-button py-3 rounded-xl font-semibold" onclick="joinRoom()">
+                🚪 Join Room
+            </button>
+            <button class="room-button py-3 rounded-xl font-semibold" onclick="openGameTypeModal()">
+                ➕ Create Room
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Type Selection Modal -->
+    <div id="gameTypeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">🎮 Select Game Type</div>
+            
+            <div id="predefinedGames">
+                <label class="game-option">
+                    <input type="radio" name="gameType" value="classic" checked onchange="handleGameTypeChange()">
+                    <div class="game-info">
+                        <div class="game-name">🎯 Classic Poker</div>
+                        <div class="game-desc">Traditional poker rules with standard deck</div>
+                    </div>
+                </label>
+
+                <label class="game-option">
+                    <input type="radio" name="gameType" value="blackjack" onchange="handleGameTypeChange()">
+                    <div class="game-info">
+                        <div class="game-name">🖤 Blackjack</div>
+                        <div class="game-desc">Beat the dealer to reach 21</div>
+                    </div>
+                </label>
+
+                <label class="game-option">
+                    <input type="radio" name="gameType" value="rummy" onchange="handleGameTypeChange()">
+                    <div class="game-info">
+                        <div class="game-name">🎴 Rummy</div>
+                        <div class="game-desc">Form sets and sequences with cards</div>
+                    </div>
+                </label>
+
+                <label class="game-option">
+                    <input type="radio" name="gameType" value="custom" onchange="handleGameTypeChange()">
+                    <div class="game-info">
+                        <div class="game-name">✨ Custom Game</div>
+                        <div class="game-desc">Create your own game rules</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Custom Game Section -->
+            <div id="customGameSection" class="custom-game-section">
+                <label>Game Name</label>
+                <input 
+                    type="text" 
+                    id="customGameName"
+                    placeholder="e.g., Speed Dealer, High Card Battle"
+                    maxlength="50"
+                />
+
+                <label>Game Rules</label>
+                <textarea 
+                    id="customGameRules"
+                    placeholder="Describe the rules of your game here..."
+                    rows="6"
+                    maxlength="500"
+                ></textarea>
+                
+                <label>Max Players</label>
+                <input 
+                    type="number" 
+                    id="customMaxPlayers"
+                    placeholder="Enter max number of players"
+                    min="2"
+                    max="8"
+                    value="4"
+                />
+            </div>
+
+            <div class="modal-buttons">
+                <button class="modal-button secondary" onclick="closeGameTypeModal()">
+                    ✕ Cancel
+                </button>
+                <button class="modal-button" onclick="confirmGameType()">
+                    ✓ Continue
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="/index.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lakadia - Waiting Room</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .game-title {
+            font-family: 'Cinzel', serif;
+            background: linear-gradient(135deg, #ffd700, #ffed4e, #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .room-container {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+        }
+        
+        .player-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .player-card.ready {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        }
+        
+        .player-card.host {
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+        }
+        
+        .chat-container {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+        }
+        
+        .chat-message {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message-bubble {
+            background: white;
+            border-radius: 18px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .message-bubble.own {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .start-button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .start-button:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(245, 87, 108, 0.5);
+        }
+        
+        .start-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .copy-button {
+            transition: all 0.2s ease;
+        }
+        
+        .copy-button:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .empty-slot {
+            border: 2px dashed #cbd5e0;
+            background: rgba(203, 213, 224, 0.2);
+        }
+        
+        .chat-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+    <div class="room-container rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white">
+            <h1 class="game-title text-3xl font-bold text-center mb-3">LAKADIA</h1>
+            <div class="flex items-center justify-between bg-white bg-opacity-20 rounded-lg p-3">
+                <div>
+                    <div class="text-xs opacity-80">Room Code</div>
+                    <div class="text-xl font-bold" id="roomCode">LOADING...</div>
+                </div>
+                <button class="copy-button bg-white bg-opacity-30 px-4 py-2 rounded-lg font-semibold text-sm" onclick="copyRoomCode()">
+                    📋 Copy
+                </button>
+            </div>
+        </div>
+        
+        <!-- Players Section -->
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Players <span id="playerCount">(0/4)</span></h2>
+                <div class="text-sm text-gray-600 pulse">⏳ Waiting for players...</div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3 mb-6" id="playersGrid">
+                <!-- Players will be dynamically inserted here -->
+                
+                <!-- Empty Slot 1 -->
+                <div class="empty-slot rounded-xl p-4 flex items-center justify-center">
+                    <div class="text-center text-gray-400">
+                        <div class="text-3xl mb-1">👤</div>
+                        <div class="text-xs font-medium">Waiting...</div>
+                    </div>
+                </div>
+                
+                <!-- Empty Slot 2 -->
+                <div class="empty-slot rounded-xl p-4 flex items-center justify-center">
+                    <div class="text-center text-gray-400">
+                        <div class="text-3xl mb-1">👤</div>
+                        <div class="text-xs font-medium">Waiting...</div>
+                    </div>
+                </div>
+                
+                <!-- Empty Slot 3 -->
+                <div class="empty-slot rounded-xl p-4 flex items-center justify-center">
+                    <div class="text-center text-gray-400">
+                        <div class="text-3xl mb-1">👤</div>
+                        <div class="text-xs font-medium">Waiting...</div>
+                    </div>
+                </div>
+                
+                <!-- Empty Slot 4 -->
+                <div class="empty-slot rounded-xl p-4 flex items-center justify-center">
+                    <div class="text-center text-gray-400">
+                        <div class="text-3xl mb-1">👤</div>
+                        <div class="text-xs font-medium">Waiting...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Start Game Button -->
+            <button class="start-button w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg mb-6" onclick="startGame()" disabled id="startGameBtn">
+                🎮 START GAME (0/4)
+            </button>
+            
+            <!-- Chat Section -->
+            <div class="chat-container rounded-xl overflow-hidden">
+                <div class="bg-gradient-to-r from-purple-500 to-indigo-500 p-3 text-white">
+                    <h3 class="font-bold text-sm">💬 Room Chat</h3>
+                </div>
+                
+                <div class="p-4 h-64 overflow-y-auto" id="chatMessages">
+                    <!-- Messages will be dynamically inserted here -->
+                </div>
+                
+                <!-- Chat Input -->
+                <div class="p-3 bg-white border-t-2 border-gray-200">
+                    <div class="flex gap-2">
+                        <input 
+                            type="text" 
+                            id="chatInput"
+                            placeholder="Type a message..."
+                            class="chat-input flex-1 px-4 py-2 rounded-full border-2 border-gray-300 text-sm"
+                            onkeypress="handleChatKeyPress(event)"
+                        />
+                        <button class="bg-gradient-to-r from-purple-500 to-indigo-500 text-white px-6 py-2 rounded-full font-semibold text-sm" onclick="sendMessage()">
+                            Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Leave Button -->
+            <button class="w-full mt-4 py-3 border-2 border-red-400 text-red-600 rounded-xl font-semibold hover:bg-red-50 transition-all" onclick="leaveRoom()">
+                🚪 Leave Room
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="/WaitingRoom.js"></script>
+
+</body>
+</html>
