@@ -98,72 +98,145 @@ app.get("/game-room", (req, res) => {
 });
 
 const rooms = {};
+const team = require("./teamRoom.js");
+
+const GAME_TYPES = { callbreak: 4, teamcallbreak: 6 }; // gameType -> maxPlayers
+const ROOM_TYPES = ["public", "private"];
+
+// Rooms in a match keep disconnected players' seats; only waiting/matchEnd rooms use the seat grace below.
+const inMatch = room => room.phase !== "waiting" && room.phase !== "matchEnd";
+
+// Waiting room: a disconnected player keeps the seat this long, so a reload or page change can rejoin by name.
+const SEAT_GRACE_MS = 15000;
+const removalTimers = new Map(); // player object -> timeout (kept off the player so payloads are unchanged)
+
+function sameName(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+}
+
+function cancelRemoval(player) {
+  clearTimeout(removalTimers.get(player));
+  removalTimers.delete(player);
+}
+
+function scheduleRemoval(roomId, player) {
+  cancelRemoval(player);
+  removalTimers.set(player, setTimeout(() => {
+    removalTimers.delete(player);
+    const room = rooms[roomId];
+    if (!room || player.connected !== false || inMatch(room)) return;
+    removePlayer(roomId, player);
+  }, SEAT_GRACE_MS));
+}
+
+/** Frees the seat now: host passes to the next player who joined, an empty room is deleted. */
+function removePlayer(roomId, player) {
+  const room = rooms[roomId];
+  if (!room) return;
+  cancelRemoval(player);
+  room.players = room.players.filter(p => p !== player);
+  if (room.players.length === 0) {
+    delete rooms[roomId];
+    console.log(`Room ${roomId} deleted (empty)`);
+    return;
+  }
+
+  if (player.isHost) {
+    player.isHost = false;
+    const next = room.players.find(p => p.connected !== false) || room.players[0];
+    next.isHost = true;
+    io.to(roomId).emit("systemMessage", `${next.name} is now the host`);
+  }
+  io.to(roomId).emit("updatePlayers", room.players);
+}
 
 function generateRoomCode() {
-  return Math.random().toString(36).substring(2, 7).toUpperCase();
+  let code;
+  do code = Math.random().toString(36).substring(2, 7).toUpperCase();
+  while (code.length < 5 || rooms[code]);
+  return code;
+}
+
+team.init(io, rooms, { scheduleRemoval, cancelRemoval, removePlayer, sameName, newRoomId: generateRoomCode });
+
+/** Validates name/avatar/gameType (+ type when given). Returns an error string or null. */
+function lobbyError({ name, gameType, type }, needType) {
+  if (!String(name || '').trim()) return "Enter your name first";
+  if (!GAME_TYPES[gameType]) return "Unknown game type";
+  if (needType && !ROOM_TYPES.includes(type)) return "Room type must be public or private";
+  return null;
+}
+
+/** 4p Call Break room with the caller as host. */
+function createCallBreakRoom(socket, { name, avatar, type }) {
+  const roomId = generateRoomCode();
+  rooms[roomId] = {
+    roomId,
+    gameType: "callbreak",
+    type,
+    maxPlayers: GAME_TYPES.callbreak,
+    phase: "waiting",
+    players: [{ id: socket.id, name, avatar, isHost: true, connected: true }],
+  };
+  socket.join(roomId);
+  socket.emit("roomJoined", rooms[roomId]);
+  io.to(roomId).emit("updatePlayers", rooms[roomId].players);
+  io.to(roomId).emit("systemMessage", `${name} created the room`);
+  return rooms[roomId];
 }
 
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
+  team.register(socket);
 
   // CREATE ROOM
-  socket.on("createRoom", ({ name, avatar, gameType, gameName, gameRules, maxPlayers, type }) => {
-    const roomId = generateRoomCode();
-
-    rooms[roomId] = {
-      roomId,
-      gameType: gameType || 'classic',
-      type: type || 'public',
-      ...(gameType === 'custom' && {
-        gameName,
-        gameRules,
-        maxPlayers: maxPlayers || 4
-      }),
-      maxPlayers: maxPlayers || 4,
-      players: [
-        {
-          id: socket.id,
-          name,
-          avatar,
-          isHost: true,
-          connected: true
-        }
-      ]
-    };
-
-    socket.join(roomId);
-
-    console.log("Room created:", roomId, "with game type:", gameType);
-    console.log("All rooms:", Object.keys(rooms));
-    console.log("Host player created:", rooms[roomId].players[0]);
-
-    socket.emit("roomJoined", rooms[roomId]);
-    io.to(roomId).emit("updatePlayers", rooms[roomId].players);
-    // announce to room
-    io.to(roomId).emit("systemMessage", `${name} created the room`);
+  socket.on("createRoom", (payload = {}) => {
+    const error = lobbyError(payload, true);
+    if (error) return socket.emit("errorMsg", error);
+    const room = payload.gameType === "teamcallbreak" ? team.createRoom(socket, payload) : createCallBreakRoom(socket, payload);
+    console.log("Room created:", room.roomId, room.gameType, room.type);
   });
 
-
-  // JOIN ROOM (PRIVATE)
-  socket.on("joinRoom", ({ roomId, name, avatar }) => {
-    const cleanRoomId = roomId.trim().toUpperCase();
-    console.log("Join attempt - Looking for room:", cleanRoomId);
-    console.log("Available rooms:", Object.keys(rooms));
-    
+  // JOIN ROOM (by code; public or private)
+  socket.on("joinRoom", ({ roomId, name, avatar } = {}) => {
+    const cleanRoomId = String(roomId || '').trim().toUpperCase();
     const room = rooms[cleanRoomId];
 
     if (!room) {
-      console.log("Room not found:", cleanRoomId);
-      socket.emit("errorMsg", "Room not found. Available rooms: " + Object.keys(rooms).join(", "));
+      socket.emit("errorMsg", "Room not found");
+      return;
+    }
+    if (!String(name || '').trim()) return socket.emit("errorMsg", "Enter your name first");
+
+    if (team.isTeam(room)) {
+      const error = team.joinRoom(socket, room, { name, avatar });
+      if (error) socket.emit("errorMsg", error);
       return;
     }
 
-    if (room.players.length >= room.maxPlayers) {
-      socket.emit("errorMsg", "Room full");
+    const existing = room.players.find(p => sameName(p.name, name));
+    if (!existing && room.phase !== "waiting") {
+      socket.emit("errorMsg", "Game already started");
+      return;
+    }
+    if (existing && existing.connected !== false) {
+      socket.emit("errorMsg", "That name is already taken in this room");
       return;
     }
 
-    room.players.push({ id: socket.id, name, avatar, isHost: false, connected: true });
+    if (existing) {
+      // Rejoin of a disconnected seat: take it back (keeps isHost)
+      cancelRemoval(existing);
+      existing.id = socket.id;
+      existing.avatar = avatar;
+      existing.connected = true;
+    } else {
+      if (room.players.length >= room.maxPlayers) {
+        socket.emit("errorMsg", "Room full");
+        return;
+      }
+      room.players.push({ id: socket.id, name, avatar, isHost: false, connected: true });
+    }
     socket.join(cleanRoomId);
 
     // console.log("Player joined room:",name," ", cleanRoomId, "Players count:", room.players.length);
@@ -181,11 +254,13 @@ io.on("connection", (socket) => {
       socket.emit("errorMsg", "Room not found");
       return;
     }
+    if (team.isTeam(room)) return; // team rooms rejoin by token (tcb:rejoin), never by name
 
     // Try to find existing player by name
     let player = room.players.find(p => p.name === name);
     if (player) {
       // update id, avatar and mark connected
+      cancelRemoval(player);
       const originalIsHost = player.isHost;
       console.log("Player rejoining - BEFORE:", player);
       player.id = socket.id;
@@ -194,6 +269,10 @@ io.on("connection", (socket) => {
       player.connected = true;
       console.log("Player rejoining - AFTER:", player);
     } else {
+      if (room.players.length >= room.maxPlayers) {
+        socket.emit("errorMsg", "Room full");
+        return;
+      }
       // add new player if not found
       player = { id: socket.id, name, avatar, isHost: false, connected: true };
       room.players.push(player);
@@ -215,33 +294,35 @@ io.on("connection", (socket) => {
       socket.emit('errorMsg', 'Room not found');
       return;
     }
+    if (team.chatBlocked(room)) return socket.emit('errorMsg', 'Chat is closed while trump is being chosen');
     // broadcast chat message to room
     io.to(cleanRoomId).emit('chatMessage', { name, text });
   });
 
   // QUICK PLAY (PUBLIC ROOM)
-  socket.on("quickPlay", ({ name, avatar }) => {
-    let room = Object.values(rooms).find(
-      r => r.type === "public" && r.players.length < r.maxPlayers
-    );
+  // Oldest public, waiting room of this game with a free seat and no player of this name; else a new public room.
+  socket.on("quickPlay", (payload = {}) => {
+    const error = lobbyError(payload, false);
+    if (error) return socket.emit("errorMsg", error);
+    const { name, avatar, gameType } = payload;
+    const fits = r =>
+      r.type === "public" && r.gameType === gameType &&
+      (team.isTeam(r)
+        ? team.canQuickJoin(r, name)
+        : r.phase === "waiting" && r.players.length < r.maxPlayers && !r.players.some(p => sameName(p.name, name)));
+    const room = Object.values(rooms).find(fits); // insertion order = oldest first
 
     if (!room) {
-      const roomId = generateRoomCode();
-      rooms[roomId] = {
-        roomId,
-        type: "public",
-        password: null,
-        players: [],
-        maxPlayers: 4,
-      };
-      room = rooms[roomId];
+      const created = { name, avatar, type: "public" };
+      return gameType === "teamcallbreak" ? team.createRoom(socket, created) : createCallBreakRoom(socket, created);
     }
+    if (team.isTeam(room)) return team.joinRoom(socket, room, { name, avatar });
 
-    room.players.push({ id: socket.id, name, avatar });
+    room.players.push({ id: socket.id, name, avatar, isHost: false, connected: true });
     socket.join(room.roomId);
-
     socket.emit("roomJoined", room);
     io.to(room.roomId).emit("updatePlayers", room.players);
+    io.to(room.roomId).emit("systemMessage", `${name} has joined the room`);
   });
 
   // START GAME
@@ -253,6 +334,7 @@ io.on("connection", (socket) => {
       socket.emit('errorMsg', 'Room not found');
       return;
     }
+    if (team.isTeam(room)) return socket.emit('errorMsg', 'Use tcb:start for Team Call Break');
 
     // Check if player is host (match by socket id first)
       let playerById = room.players.find(p => p.id === socket.id);
@@ -291,7 +373,8 @@ io.on("connection", (socket) => {
     }
 
     console.log(`Game starting in room ${cleanRoomId}:`, room.players.map(p => p.name));
-    
+    room.phase = "playing";
+
     // Broadcast game start to all players in the room
     io.to(cleanRoomId).emit('gameStarted');
   });
@@ -409,6 +492,7 @@ io.on("connection", (socket) => {
     // Find and update the player's socket ID (they may have a new socket from page navigation)
     const player = room.players.find(p => p.name === playerName);
     if (player) {
+      cancelRemoval(player);
       player.id = socket.id;
       player.connected = true;
       console.log(`joinGameRoom: Updated player ${playerName} socket ID to ${socket.id}`);
@@ -808,7 +892,8 @@ io.on("connection", (socket) => {
     room.playerHands = {};
     room.finalResults = null;
     room.currentRound = 1;
-    
+    room.phase = "waiting";
+
     // Reset player scores
     room.players.forEach(p => {
       p.totalScore = 0;
@@ -828,6 +913,10 @@ io.on("connection", (socket) => {
     
     for (const roomId in rooms) {
       const room = rooms[roomId];
+      if (team.isTeam(room)) {
+        team.onDisconnect(socket, room);
+        continue;
+      }
       const initialPlayerCount = room.players.length;
       
       // Find the player who is leaving to get their name
@@ -838,6 +927,7 @@ io.on("connection", (socket) => {
         // Mark player as disconnected but keep their slot to preserve isHost
         leavingPlayer.id = null;
         leavingPlayer.connected = false;
+        if (!inMatch(room)) scheduleRemoval(roomId, leavingPlayer);
       }
 
       io.to(roomId).emit("updatePlayers", room.players);
@@ -849,11 +939,6 @@ io.on("connection", (socket) => {
 
       console.log(`Room ${roomId}: ${initialPlayerCount} -> ${room.players.length} players`);
 
-      // Only delete room if it has no players AND didn't just start (grace period)
-      // Don't automatically delete rooms - let them persist
-      // if (room.players.length === 0) {
-      //   delete rooms[roomId];
-      // }
     }
   });
 });

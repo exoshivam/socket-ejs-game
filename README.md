@@ -18,5 +18,6 @@ A real-time multiplayer browser-based card game built using Node.js, Express, EJ
 
 ## Run Locally
 ```bash
+cd backend
 npm install
-node server.js
+npm start
